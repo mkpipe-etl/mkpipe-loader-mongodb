@@ -91,6 +91,12 @@ dmypy.json
 # Local development tools
 *.log
 
+# JAR files and Ivy cache (except custom JARs)
+*.jar
+!mkpipe-tls-helper.jar
+!**/mkpipe-tls-helper.jar
+.ivy2/
+
 # Python virtual environments
 *.pyenv
 *.pyo

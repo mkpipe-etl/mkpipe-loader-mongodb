@@ -9,6 +9,8 @@ from mkpipe.spark.base import BaseLoader
 from mkpipe.models import ConnectionConfig, ExtractResult, TableConfig
 from mkpipe.utils import get_logger
 
+JAR_PACKAGES = ['org.mongodb.spark:mongo-spark-connector_2.13:10.5.0']
+
 logger = get_logger(__name__)
 
 _JVM_TLS_CONFIGURED = False
