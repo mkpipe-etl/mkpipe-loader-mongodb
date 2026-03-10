@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='mkpipe-loader-mongodb',
-    version='0.4.5',
+    version='0.5.0',
     license='Apache License 2.0',
     packages=find_packages(),
     install_requires=['mkpipe'],
