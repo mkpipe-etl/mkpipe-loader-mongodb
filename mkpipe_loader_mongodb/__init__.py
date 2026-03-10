@@ -95,6 +95,9 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
             df = df.drop('etl_time')
         df = df.withColumn('etl_time', F.lit(etl_time).cast(TimestampType()))
 
+        if table.write_partitions:
+            df = df.coalesce(table.write_partitions)
+
         logger.info({'table': target_name, 'status': 'loading'})
 
         (
