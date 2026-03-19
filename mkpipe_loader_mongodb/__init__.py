@@ -6,6 +6,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import TimestampType
 
 from mkpipe.spark.base import BaseLoader
+from mkpipe.spark.columns import add_etl_columns
 from mkpipe.models import ConnectionConfig, ExtractResult, TableConfig
 from mkpipe.utils import get_logger
 
@@ -91,23 +92,34 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
             _configure_jvm_tls_insecure(spark)
 
         etl_time = datetime.now()
-        if 'etl_time' in df.columns:
-            df = df.drop('etl_time')
-        df = df.withColumn('etl_time', F.lit(etl_time).cast(TimestampType()))
+        if table.dedup_columns:
+            df = add_etl_columns(df, etl_time, dedup_columns=table.dedup_columns)
+        else:
+            if 'etl_time' in df.columns:
+                df = df.drop('etl_time')
+            df = df.withColumn('etl_time', F.lit(etl_time).cast(TimestampType()))
 
         if table.write_partitions:
             df = df.coalesce(table.write_partitions)
 
         logger.info({'table': target_name, 'status': 'loading'})
 
-        (
+        writer = (
             df.write.format('mongodb')
             .option('connection.uri', self.mongo_uri)
             .option('database', self.database)
             .option('collection', target_name)
-            .mode(data.write_mode)
-            .save()
         )
+
+        if table.dedup_columns:
+            writer = (
+                writer
+                .option('operationType', 'replace')
+                .option('upsertDocument', 'true')
+                .option('idFieldList', 'mkpipe_id')
+            )
+
+        writer.mode(data.write_mode).save()
 
         df.unpersist()
         gc.collect()
