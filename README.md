@@ -52,6 +52,29 @@ pipelines:
 
 ---
 
+## Write Strategy
+
+Control how data is written to MongoDB:
+
+```yaml
+      - name: public.events
+        target_name: stg_events
+        write_strategy: upsert       # append | replace | upsert
+        write_key: [event_id]        # required for upsert
+```
+
+| Strategy | MongoDB Behavior |
+|---|---|
+| `append` | Insert documents via Spark connector (default for incremental) |
+| `replace` | Drop collection, then insert (default for full) |
+| `upsert` | Auto-creates a unique index on `write_key` columns, then writes with Spark connector `operationType=replace` matching on `write_key` |
+
+> **Note:** `upsert` requires `write_key`. The loader automatically creates a unique compound index on the `write_key` columns before writing. Existing documents matching the key are replaced; new documents are inserted.
+>
+> **Migration:** If you previously used `dedup_columns` for implicit upsert behavior, switch to explicit `write_strategy: upsert` with `write_key`. The old behavior still works but emits a deprecation warning.
+
+---
+
 ## Write Parallelism
 
 By default Spark writes to MongoDB using however many partitions the DataFrame currently has. You can control write parallelism with `write_partitions`, which calls `coalesce` before the write to reduce the number of open connections to MongoDB:
@@ -86,6 +109,8 @@ By default Spark writes to MongoDB using however many partitions the DataFrame c
 | `replication_method` | `full` / `incremental` | `full` | Replication strategy |
 | `write_partitions` | int | — | Coalesce DataFrame to N partitions before writing |
 | `batchsize` | int | `10000` | Records per write batch |
+| `write_strategy` | string | — | `append`, `replace`, `upsert` |
+| `write_key` | list | — | Key columns for upsert (unique index created automatically) |
 | `dedup_columns` | list | — | Columns used for `mkpipe_id` hash deduplication |
 | `tags` | list | `[]` | Tags for selective pipeline execution |
 | `pass_on_error` | bool | `false` | Skip table on error instead of failing |

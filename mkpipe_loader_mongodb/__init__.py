@@ -1,13 +1,16 @@
 import gc
 from datetime import datetime
+from typing import List
 from urllib.parse import parse_qs, urlparse
 
-from pyspark.sql import functions as F
+from pyspark.sql import DataFrame, functions as F
 from pyspark.sql.types import TimestampType
 
+from mkpipe.exceptions import ConfigError, LoadError
+from mkpipe.models import ConnectionConfig, ExtractResult, TableConfig, WriteStrategy
 from mkpipe.spark.base import BaseLoader
 from mkpipe.spark.columns import add_etl_columns
-from mkpipe.models import ConnectionConfig, ExtractResult, TableConfig
+from mkpipe.strategy import resolve_write_strategy
 from mkpipe.utils import get_logger
 
 JAR_PACKAGES = ['org.mongodb.spark:mongo-spark-connector_2.13:10.5.0']
@@ -80,6 +83,47 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
         )
         self.database = connection.database
 
+    def _base_writer(self, df: DataFrame, target_name: str):
+        return (
+            df.write.format('mongodb')
+            .option('connection.uri', self.mongo_uri)
+            .option('database', self.database)
+            .option('collection', target_name)
+        )
+
+    def _append(self, df: DataFrame, target_name: str) -> None:
+        self._base_writer(df, target_name).mode('append').save()
+
+    def _replace(self, df: DataFrame, target_name: str) -> None:
+        self._base_writer(df, target_name).mode('overwrite').save()
+
+    def _upsert(self, df: DataFrame, target_name: str, write_key: List[str]) -> None:
+        (
+            self._base_writer(df, target_name)
+            .option('operationType', 'replace')
+            .option('upsertDocument', 'true')
+            .option('idFieldList', ','.join(write_key))
+            .mode('append')
+            .save()
+        )
+
+    def _ensure_index(self, collection_name: str, write_key: List[str]) -> None:
+        from pymongo import MongoClient
+
+        client = MongoClient(self.mongo_uri)
+        try:
+            db = client[self.database]
+            coll = db[collection_name]
+            index_fields = [(k, 1) for k in write_key]
+            coll.create_index(index_fields, unique=True, background=True)
+            logger.info({
+                'collection': collection_name,
+                'status': 'index_ensured',
+                'fields': write_key,
+            })
+        finally:
+            client.close()
+
     def load(self, table: TableConfig, data: ExtractResult, spark) -> None:
         target_name = table.target_name
         df = data.df
@@ -102,24 +146,49 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
         if table.write_partitions:
             df = df.coalesce(table.write_partitions)
 
-        logger.info({'table': target_name, 'status': 'loading'})
+        strategy = resolve_write_strategy(table, data)
 
-        writer = (
-            df.write.format('mongodb')
-            .option('connection.uri', self.mongo_uri)
-            .option('database', self.database)
-            .option('collection', target_name)
-        )
-
-        if table.dedup_columns:
-            writer = (
-                writer
-                .option('operationType', 'replace')
-                .option('upsertDocument', 'true')
-                .option('idFieldList', 'mkpipe_id')
+        # Deprecation warning: dedup_columns without explicit write_strategy
+        if table.dedup_columns and table.write_strategy is None:
+            logger.warning(
+                "Table '%s': dedup_columns is set but write_strategy is not. "
+                "Implicit upsert via dedup_columns is deprecated. "
+                "Use write_strategy='upsert' with write_key explicitly.",
+                target_name,
             )
+            # Backward compat: fall back to upsert with mkpipe_id
+            strategy = WriteStrategy.UPSERT
+            write_key = ['mkpipe_id']
+        else:
+            write_key = table.write_key
 
-        writer.mode(data.write_mode).save()
+        logger.info({
+            'table': target_name,
+            'status': 'loading',
+            'write_strategy': strategy.value,
+        })
+
+        try:
+            match strategy:
+                case WriteStrategy.APPEND:
+                    self._append(df, target_name)
+                case WriteStrategy.REPLACE:
+                    self._replace(df, target_name)
+                case WriteStrategy.UPSERT:
+                    if not write_key:
+                        raise ConfigError(
+                            f"write_strategy 'upsert' requires write_key for table '{target_name}'"
+                        )
+                    self._ensure_index(target_name, write_key)
+                    self._upsert(df, target_name, write_key)
+                case _:
+                    raise ConfigError(
+                        f"MongoDB loader does not support write_strategy: {strategy.value}"
+                    )
+        except (ConfigError, LoadError):
+            raise
+        except Exception as e:
+            raise LoadError(f"Failed to write '{target_name}': {e}") from e
 
         df.unpersist()
         gc.collect()
