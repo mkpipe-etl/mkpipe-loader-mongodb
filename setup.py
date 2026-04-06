@@ -2,10 +2,10 @@ from setuptools import setup, find_packages
 
 setup(
     name='mkpipe-loader-mongodb',
-    version='0.7.0',
+    version='0.7.1',
     license='Apache License 2.0',
     packages=find_packages(),
-    install_requires=['mkpipe'],
+    install_requires=['mkpipe', 'pymongo'],
     include_package_data=True,
     entry_points={
         'mkpipe.loaders': [

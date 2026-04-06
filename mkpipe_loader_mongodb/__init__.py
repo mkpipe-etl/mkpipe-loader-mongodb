@@ -84,12 +84,15 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
         self.database = connection.database
 
     def _base_writer(self, df: DataFrame, target_name: str):
-        return (
+        writer = (
             df.write.format('mongodb')
             .option('connection.uri', self.mongo_uri)
             .option('database', self.database)
             .option('collection', target_name)
         )
+        for key, value in self.connection.extra.items():
+            writer = writer.option(key, str(value))
+        return writer
 
     def _append(self, df: DataFrame, target_name: str) -> None:
         self._base_writer(df, target_name).mode('append').save()
