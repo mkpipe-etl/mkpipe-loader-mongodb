@@ -101,11 +101,15 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
         self._base_writer(df, target_name).mode('overwrite').save()
 
     def _upsert(self, df: DataFrame, target_name: str, write_key: List[str]) -> None:
+        # Deduplicate by write_key to prevent E11000 duplicate key errors.
+        # dropDuplicates is cheaper than Window+row_number (uses hash-based dedup).
+        df = df.dropDuplicates(write_key)
+
         (
             self._base_writer(df, target_name)
             .option('operationType', 'replace')
-            .option('upsertDocument', 'true')
             .option('idFieldList', ','.join(write_key))
+            .option('ordered', 'false')
             .mode('append')
             .save()
         )
