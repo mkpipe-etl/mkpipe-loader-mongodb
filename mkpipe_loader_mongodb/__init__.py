@@ -145,7 +145,12 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
         col_name = self.ingested_at_column
         etl_time = datetime.now()
         if table.dedup_columns:
-            df = add_etl_columns(df, etl_time, dedup_columns=table.dedup_columns, ingested_at_column=col_name)
+            df = add_etl_columns(
+                df, etl_time,
+                dedup_columns=table.dedup_columns,
+                ingested_at_column=col_name,
+                ingestion_id_column=self.ingestion_id_column,
+            )
         else:
             if col_name in df.columns:
                 df = df.drop(col_name)
@@ -164,9 +169,9 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
                 "Use write_strategy='upsert' with write_key explicitly.",
                 target_name,
             )
-            # Backward compat: fall back to upsert with mkpipe_id
+            # Backward compat: fall back to upsert with ingestion_id_column
             strategy = WriteStrategy.UPSERT
-            write_key = ['mkpipe_id']
+            write_key = [self.ingestion_id_column]
         else:
             write_key = table.write_key
 
