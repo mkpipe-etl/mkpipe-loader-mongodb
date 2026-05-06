@@ -187,7 +187,10 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
                 case WriteStrategy.APPEND:
                     self._append(df, target_name)
                 case WriteStrategy.REPLACE:
-                    self._replace(df, target_name)
+                    if self.if_exists == 'append':
+                        self._append(df, target_name)
+                    else:
+                        self._replace(df, target_name)
                 case WriteStrategy.UPSERT:
                     if not write_key:
                         raise ConfigError(
