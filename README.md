@@ -66,7 +66,7 @@ Control how data is written to MongoDB:
 | Strategy | MongoDB Behavior |
 |---|---|
 | `append` | Insert documents via Spark connector (default for incremental) |
-| `replace` | Drop collection, then insert (default for full). Use `if_exists: append` to preserve existing collection |
+| `replace` | Drop collection, then insert (default for full). With `if_exists: append`: delete all documents + insert (preserves collection/indexes) |
 | `upsert` | Auto-creates a unique index on `write_key` columns, then writes with Spark connector `operationType=replace` matching on `write_key` |
 
 > **Note:** `upsert` requires `write_key`. The loader automatically creates a unique compound index on the `write_key` columns before writing. Existing documents matching the key are replaced; new documents are inserted.
@@ -111,7 +111,7 @@ By default Spark writes to MongoDB using however many partitions the DataFrame c
 | `batchsize` | int | `10000` | Records per write batch |
 | `write_strategy` | string | — | `append`, `replace`, `upsert` |
 | `write_key` | list | — | Key columns for upsert (unique index created automatically) |
-| `if_exists` | string | — | `replace` (drop+create) or `append` (preserve collection). Inherits from settings |
+| `if_exists` | string | — | `replace` (drop+create) or `append` (preserve collection, delete+insert). Inherits from settings |
 | `dedup_columns` | list | — | Columns used for `mkpipe_id` hash deduplication |
 | `tags` | list | `[]` | Tags for selective pipeline execution |
 | `pass_on_error` | bool | `false` | Skip table on error instead of failing |

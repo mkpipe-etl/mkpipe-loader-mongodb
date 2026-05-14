@@ -114,6 +114,21 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
             .save()
         )
 
+    def _delete_all(self, collection_name: str) -> None:
+        from pymongo import MongoClient
+
+        client = MongoClient(self.mongo_uri)
+        try:
+            db = client[self.database]
+            result = db[collection_name].delete_many({})
+            logger.info({
+                'collection': collection_name,
+                'status': 'truncated',
+                'deleted_count': result.deleted_count,
+            })
+        finally:
+            client.close()
+
     def _ensure_index(self, collection_name: str, write_key: List[str]) -> None:
         from pymongo import MongoClient
 
@@ -188,6 +203,7 @@ class MongoDBLoader(BaseLoader, variant='mongodb'):
                     self._append(df, target_name)
                 case WriteStrategy.REPLACE:
                     if self.if_exists == 'append':
+                        self._delete_all(target_name)
                         self._append(df, target_name)
                     else:
                         self._replace(df, target_name)
